@@ -9,15 +9,18 @@ varDcl: 'var' ID type '=' expr
       | ID ':=' expr ;
 
 stmt:
-    expr                                     # ExprStmt
-    | '{' dcl* '}'                          # BlockStmt
-    | 'if' '(' expr ')' stmt ('else' stmt)? # IfStmt
-    | 'while' '(' expr ')' stmt             # WhileStmt
-    | 'for' '(' forInit expr ';' expr ')' stmt # ForStmt
-    | 'break' ';'                            # BreakStmt
-    | 'continue' ';'                         # ContinueStmt
-    | 'return' expr?';'                      # ReturnStmt;
+    expr                                               # ExprStmt
+    | '{' dcl* '}'                                     # BlockStmt
+    | 'if'  expr  stmt ('else' stmt)?                  # IfStmt
+    | 'switch' expr '{' caseClause*  defaultStmt? '}'  # SwitchStmt
+    | 'while' '(' expr ')' stmt                        # WhileStmt
+    | 'for' '(' forInit expr ';' expr ')' stmt         # ForStmt
+    | 'break' ';'                                      # BreakStmt
+    | 'continue' ';'                                   # ContinueStmt
+    | 'return' expr?';'                                # ReturnStmt;
 
+caseClause: 'case' expr ':' stmt*; 
+defaultStmt: 'default' ':' stmt*;
 
 forInit: varDcl | expr ';';
 
@@ -28,6 +31,8 @@ expr:
     | expr op = ('+' | '-') expr                # AddSub
     | expr op = ('>' | '<' | '>=' | '<=') expr  # Relational
     | expr op = ('==' | '!=') expr              # Equality
+    | expr op = ('&&' | '||' ) expr             # Logical
+    | '!' expr                                  # Not
     | ID op = ('+=' | '-=') expr                # IncDecAssign
     | ID '=' expr                               # Assign
     | BOOL                                      # Boolean
@@ -57,5 +62,5 @@ ID: [a-zA-Z_][a-zA-Z0-9_]*;
 
 // COMENTARIOS 
 WS: [ \t\r\n]+ -> skip;
-LINE_COMMENT: '//' ~[\r\n]* -> skip; // Comentario de una línea
-BLOCK_COMMENT: '/*' .*? '*/' -> skip; // Comentario multilínea
+LINE_COMMENT: '//' ~[\r\n]* -> skip; 
+BLOCK_COMMENT: '/*' .*? '*/' -> skip;

@@ -1,6 +1,7 @@
 using System.Globalization;
 using analyzer;
 using Antlr4.Runtime.Misc;
+using Microsoft.Extensions.Logging.Console;
 
 public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
 {
@@ -83,6 +84,15 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
     }
 
 
+    // VisitAssign
+    public override ValueWrapper VisitAssign(LanguageParser.AssignContext context)
+    {
+        string id = context.ID().GetText();
+        ValueWrapper value = Visit(context.expr());
+        return currentEnvironment.AssignVariable(id, value, context.Start);
+    }
+
+
     // VisitExprStmt
     public override ValueWrapper VisitExprStmt(LanguageParser.ExprStmtContext context)
     {
@@ -141,7 +151,10 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
 
     
     //VisitRune
-    
+    public override ValueWrapper VisitRune(LanguageParser.RuneContext context)
+    {
+        return new RuneValue(context.RUNE().GetText()[1]);
+    }
 
     // VisitAddSub
     public override ValueWrapper VisitAddSub(LanguageParser.AddSubContext context)
@@ -258,7 +271,7 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
    
 
     // VisitEquality
-        public override ValueWrapper VisitEquality(LanguageParser.EqualityContext context)
+    public override ValueWrapper VisitEquality(LanguageParser.EqualityContext context)
         {
             ValueWrapper left = Visit(context.expr(0));
             ValueWrapper right = Visit(context.expr(1));
@@ -278,6 +291,8 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
                 (BoolValue l, BoolValue r, "!=") => new BoolValue(l.Value != r.Value), // bool != bool
                 (StringValue l, StringValue r, "==") => new BoolValue(l.Value == r.Value), // string == string
                 (StringValue l, StringValue r, "!=") => new BoolValue(l.Value != r.Value), // string != string
+                (RuneValue l, RuneValue r, "==") => new BoolValue(l.Value == r.Value), // rune == rune
+                (RuneValue l, RuneValue r, "!=") => new BoolValue(l.Value != r.Value), // rune != rune
                 
                 _ => throw new SemanticError("Operacion Invalida", context.Start)
             };
@@ -293,44 +308,63 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
 
         return (left, right, op) switch
         {
-            (IntValue l, IntValue r, "<") => new BoolValue(l.Value < r.Value),
-            (IntValue l, IntValue r, "<=") => new BoolValue(l.Value <= r.Value),
-            (IntValue l, IntValue r, ">") => new BoolValue(l.Value > r.Value),
-            (IntValue l, IntValue r, ">=") => new BoolValue(l.Value >= r.Value),
-            (FloatValue l, FloatValue r, "<") => new BoolValue(l.Value < r.Value),
-            (FloatValue l, FloatValue r, "<=") => new BoolValue(l.Value <= r.Value),
-            (FloatValue l, FloatValue r, ">") => new BoolValue(l.Value > r.Value),
-            (FloatValue l, FloatValue r, ">=") => new BoolValue(l.Value >= r.Value),
-            _ => throw new SemanticError("Invalid operation", context.Start)
+            (IntValue l, IntValue r, "<") => new BoolValue(l.Value < r.Value), //int < int
+            (IntValue l, IntValue r, "<=") => new BoolValue(l.Value <= r.Value), //int <= int
+            (IntValue l, IntValue r, ">") => new BoolValue(l.Value > r.Value), //int > int
+            (IntValue l, IntValue r, ">=") => new BoolValue(l.Value >= r.Value), //int >= int
+ 
+            (FloatValue l, FloatValue r, "<") => new BoolValue(l.Value < r.Value), // float64 < float64
+            (FloatValue l, FloatValue r, "<=") => new BoolValue(l.Value <= r.Value), // float64 <= float64
+            (FloatValue l, FloatValue r, ">") => new BoolValue(l.Value > r.Value), // float64 > float64
+            (FloatValue l, FloatValue r, ">=") => new BoolValue(l.Value >= r.Value), // float64 >= float64
+
+            (IntValue l, FloatValue r, "<") => new BoolValue(l.Value < r.Value), // int < float64
+            (IntValue l, FloatValue r, "<=") => new BoolValue(l.Value <= r.Value), // int <= float64
+            (IntValue l, FloatValue r, ">") => new BoolValue(l.Value > r.Value),    // int > float64
+            (IntValue l, FloatValue r, ">=") => new BoolValue(l.Value >= r.Value), // int >= float64
+
+            (FloatValue l, IntValue r, "<") => new BoolValue(l.Value < r.Value), // float64 < int
+            (FloatValue l, IntValue r, "<=") => new BoolValue(l.Value <= r.Value),  //  float64 <= int
+            (FloatValue l, IntValue r, ">") => new BoolValue(l.Value > r.Value),   // float64 > int
+            (FloatValue l, IntValue r, ">=") => new BoolValue(l.Value >= r.Value), // float64 >= int
+
+
+            (RuneValue l, RuneValue r, "<") => new BoolValue(l.Value < r.Value), // Rune < Rune
+            (RuneValue l, RuneValue r, "<=") => new BoolValue(l.Value <= r.Value),  //  Rune <= Rune
+            (RuneValue l, RuneValue r, ">") => new BoolValue(l.Value > r.Value),   // Rune > Rune
+            (RuneValue l, RuneValue r, ">=") => new BoolValue(l.Value >= r.Value), // Rune >= Rune
+
+            _ => throw new SemanticError("Operacion Invalida", context.Start)
         };
     }
 
-    // VisitAssign
-    public override ValueWrapper VisitAssign(LanguageParser.AssignContext context)
+    //VisitLogical
+    public override ValueWrapper VisitLogical(LanguageParser.LogicalContext context)
     {
-        string id = context.ID().GetText();
-        ValueWrapper value = Visit(context.expr());
-        return currentEnvironment.AssignVariable(id, value, context.Start);
-    }
+        ValueWrapper left = Visit(context.expr(0));
+        ValueWrapper right = Visit(context.expr(1));
+        var op = context.op.Text;
 
-
-    
-
-
-    // VisitBlockStmt
-    public override ValueWrapper VisitBlockStmt(LanguageParser.BlockStmtContext context)
-    {
-        Environment previousEnvironment = currentEnvironment;
-        currentEnvironment = new Environment(currentEnvironment);
-
-        foreach (var stmt in context.dcl())
+        return (left, right, op) switch
         {
-            Visit(stmt);
-        }
-
-        currentEnvironment = previousEnvironment;
-        return defaultVoid;
+            (BoolValue l, BoolValue r, "&&") => new BoolValue(l.Value && r.Value), // bool && bool
+            (BoolValue l, BoolValue r, "||") => new BoolValue(l.Value || r.Value), // bool || bool
+            _ => throw new SemanticError("Operacion Invalida", context.Start)
+        };
     }
+
+
+    // VisitNot
+    public override ValueWrapper VisitNot(LanguageParser.NotContext context)
+    {
+        ValueWrapper value = Visit(context.expr());
+        if (value is not BoolValue)
+        {
+            throw new SemanticError("Operacion Invalida", context.Start);
+        }
+        return new BoolValue(!(value as BoolValue).Value);
+    }
+
 
     // VisitIfStmt
     public override ValueWrapper VisitIfStmt(LanguageParser.IfStmtContext context)
@@ -339,7 +373,7 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
 
         if (condition is not BoolValue)
         {
-            throw new SemanticError("Invalid condition", context.Start);
+            throw new SemanticError("Condicion invalida", context.Start);
         }
 
         if ((condition as BoolValue).Value)
@@ -354,24 +388,62 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
         return defaultVoid;
     }
 
-    // VisitWhileStmt
-    public override ValueWrapper VisitWhileStmt(LanguageParser.WhileStmtContext context)
+
+    //VisitSwitchStmt
+    public override ValueWrapper VisitSwitchStmt(LanguageParser.SwitchStmtContext context)
     {
         ValueWrapper condition = Visit(context.expr());
 
-        if (condition is not BoolValue)
+        // ejecuta el primero que coincida
+        foreach (var caseClause in context.caseClause())
         {
-            throw new SemanticError("Invalid condition", context.Start);
+            ValueWrapper caseValue = Visit(caseClause.expr());
+
+            if (condition.Equals(caseValue))
+            {
+                foreach (var stmt in caseClause.stmt())
+                {
+                    Visit(stmt);  
+                }
+                return defaultVoid;  
+            }
         }
 
-        while ((condition as BoolValue).Value)
+        // Si no hubo coincidencia, procesamos el 'default' si existe
+        if (context.defaultStmt() != null)
         {
-            Visit(context.stmt());
-            condition = Visit(context.expr());
+            Visit(context.defaultStmt());
         }
 
         return defaultVoid;
     }
+
+
+    // VisitCaseClause
+    public override ValueWrapper VisitCaseClause(LanguageParser.CaseClauseContext context)
+    {
+        // sentencias dentro de un 'case'
+        foreach (var stmt in context.stmt())
+        {
+            Visit(stmt);  // ejecuta cada instrucción del case
+        }
+
+        return defaultVoid;
+    }
+        
+
+    //VisitDefaultCase
+    public override ValueWrapper VisitDefaultStmt(LanguageParser.DefaultStmtContext context)
+    {
+        // sentencia del 'default'
+        foreach (var stmt in context.stmt())
+        {
+            Visit(stmt); 
+        }
+
+        return defaultVoid;
+    }
+
 
     // VisitForStmt
     public override ValueWrapper VisitForStmt(LanguageParser.ForStmtContext context)
@@ -386,7 +458,6 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
         currentEnvironment = previousEnvironment;
         return defaultVoid;
     }
-
 
     public void VisitForBody(LanguageParser.ForStmtContext context)
     {
@@ -420,8 +491,41 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
 
     }
 
+    // VisitBlockStmt
+    public override ValueWrapper VisitBlockStmt(LanguageParser.BlockStmtContext context)
+    {
+        Environment previousEnvironment = currentEnvironment;
+        currentEnvironment = new Environment(currentEnvironment);
 
-    // VisitForStmt
+        foreach (var stmt in context.dcl())
+        {
+            Visit(stmt);
+        }
+
+        currentEnvironment = previousEnvironment;
+        return defaultVoid;
+    }
+
+
+    // VisitWhileStmt
+    public override ValueWrapper VisitWhileStmt(LanguageParser.WhileStmtContext context)
+    {
+        ValueWrapper condition = Visit(context.expr());
+
+        if (condition is not BoolValue)
+        {
+            throw new SemanticError("Invalid condition", context.Start);
+        }
+
+        while ((condition as BoolValue).Value)
+        {
+            Visit(context.stmt());
+            condition = Visit(context.expr());
+        }
+
+        return defaultVoid;
+    }
+
 
     //VisitBreakStmt
     public override ValueWrapper VisitBreakStmt(LanguageParser.BreakStmtContext context)
