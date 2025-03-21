@@ -11,10 +11,14 @@ export default function Home() {
   const [code, setCode] = useState<string>("");
   const [output, setOutput] = useState<string>("");
   const [isError, setIsError] = useState<boolean>(false); // Estado para controlar el color del output
-  const [cursorPosition, setCursorPosition] = useState<{ line: number; column: number }>({
+  const [cursorPosition, setCursorPosition] = useState<{
+    line: number;
+    column: number;
+  }>({
     line: 1,
     column: 1,
   });
+
 
   const handleExecute = async () => {
     try {
@@ -33,23 +37,27 @@ export default function Home() {
       }
 
       setOutput(data.result);
-      setIsError(false); // Si no hay error, aseguramos que el color sea verde
+      setIsError(false); // Si no hay error
     } catch (err) {
       setOutput(err instanceof Error ? err.message : "Error desconocido");
-      setIsError(true); // Si hay error, cambiamos a rojo
+      setIsError(true); // Si hay error
     }
   };
 
+  
+  
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white">
       {/* Barra de herramientas */}
       <div className="w-full bg-gray-800 p-4 flex justify-between items-center shadow-md relative h-15">
         <div className="flex items-center space-x-4">
           <Image src={logo} alt="Logo" width={50} height={50} />
-          <h1 className="text-xl font-bold tracking-wide text-white">GoLight</h1>
-          <Menu />
+          <h1 className="text-xl font-bold tracking-wide text-white">
+            GoLight
+          </h1>
+          <Menu code={code} />
         </div>
-
+        
         <div className="flex space-x-2">
           <button
             className="bg-green-700 hover:bg-green-600 transition-colors text-white font-semibold py-2 px-5 rounded-lg shadow"
@@ -72,7 +80,7 @@ export default function Home() {
         <div className="min-h-[400px] flex-1 relative border border-gray-700 rounded-lg shadow-lg overflow-hidden">
           <Editor
             height="calc(100% - 38px)"
-            defaultLanguage="javascript"
+            defaultLanguage="go"
             theme="vs-dark"
             value={code}
             onChange={(value) => setCode(value || "")}
@@ -100,6 +108,7 @@ export default function Home() {
           <pre className="whitespace-pre-wrap">{output || "Output"}</pre>
         </div>
       </div>
+
     </div>
   );
 }

@@ -2,27 +2,44 @@ grammar Language;
 
 program: dcl*;
 
-dcl: varDcl | stmt;
+dcl: varDcl |funcDcl| structDcl | slice | matrix |stmt;
 
-varDcl: 'var' ID type '=' expr   
-      | 'var' ID type              
-      | ID ':=' expr ;
+varDcl: 'var' ID type '=' expr ';'?   
+      | 'var' ID type  ';'?             
+      | ID ':=' expr ';'?
+      | ID  type ';'?;
+      
+
+
+matrix: ID ':=' '[' ']' '[' ']' type '{' '{' args '}'',' ( '{' args '}' ',')* '}' ';'?;
+
+
+
+slice:  'var' ID '[' ']' type ';'? ; 
+
+funcDcl: 'func' ID '(' params? ')' type? '{' dcl* '}' ';'? ;
+
+structDcl: 'type' ID 'struct' '{' varDcl* '}' ;
+
+
+params: ID type (',' ID type)*;
 
 stmt:
     expr                                               # ExprStmt
     | '{' dcl* '}'                                     # BlockStmt
     | 'if'  expr  stmt ('else' stmt)?                  # IfStmt
-    | 'switch' expr '{' caseClause*  defaultStmt? '}'  # SwitchStmt
-    | 'while' '(' expr ')' stmt                        # WhileStmt
-    | 'for' '(' forInit expr ';' expr ')' stmt         # ForStmt
-    | 'break' ';'                                      # BreakStmt
-    | 'continue' ';'                                   # ContinueStmt
-    | 'return' expr?';'                                # ReturnStmt;
+    | 'switch' expr '{' cases*  defaultSwitch? '}'     # SwitchStmt
+    | 'for'  forInit expr ';' expr  stmt               # ForStmt
+    | 'for'  expr  stmt                                # ForCondStmt
+    | 'for' ID ',' ID ':=' 'range' expr stmt           # ForRange
+    | 'break'  ';'?                                         # BreakStmt
+    | 'continue'  ';'?                                      # ContinueStmt
+    | 'return' expr? ';'?                                   # ReturnStmt; 
 
-caseClause: 'case' expr ':' stmt*; 
-defaultStmt: 'default' ':' stmt*;
+cases: 'case' expr ':' stmt*; 
+defaultSwitch: 'default' ':' stmt*;
 
-forInit: varDcl | expr ';';
+forInit: varDcl ';' | expr ';';
 
 expr:
     '-' expr                                    # Negate
@@ -34,7 +51,13 @@ expr:
     | expr op = ('&&' | '||' ) expr             # Logical
     | '!' expr                                  # Not
     | ID op = ('+=' | '-=') expr                # IncDecAssign
-    | ID '=' expr                               # Assign
+    | expr '=' expr ';'?                              # Assign
+    | '['  ']' type '{' args '}'                # Slices
+    | ID '[' expr ']'                           # Index
+    | ID '[' expr ']' '[' expr ']'              # MatrixIndex
+    | ID '++'                                   # Increment
+    | ID '--'                                   # Decrement
+    | ID '{' props '}'                          # InStruct
     | BOOL                                      # Boolean
     | FLOAT                                     # Float
     | STRING                                    # String
@@ -44,9 +67,11 @@ expr:
     | EMBEDDED                                  # Embedded
     | '(' expr ')'                              # Parens;
 
-call: '(' args? ')';
+call: '(' args? ')' #FuncCall | '.' ID #Get;
 
 args: expr (',' expr)*;
+
+props: ( ID ':' expr ',' ( ID ':' expr ',' )*); 
 
 
 type: 'int' | 'float64' | 'string' | 'bool' | 'rune';
@@ -55,7 +80,7 @@ EMBEDDED:  ID '.' ID;
 INT: [0-9]+;
 BOOL: 'true' | 'false';
 FLOAT: [0-9]+ '.' [0-9]+;
-STRING: '"' ~'"'* '"';
+STRING: '"' ('\\"' | ~'"')* '"';
 RUNE: '\'' . '\'';
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
 

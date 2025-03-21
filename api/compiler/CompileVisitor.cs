@@ -1,4 +1,6 @@
+using System.Diagnostics.Eventing.Reader;
 using System.Globalization;
+using System.Reflection.Metadata;
 using analyzer;
 using Antlr4.Runtime.Misc;
 using Microsoft.Extensions.Logging.Console;
@@ -9,13 +11,35 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
     public ValueWrapper defaultVoid = new VoidValue();
 
     public string output = "";
-    public Environment currentEnvironment;
+    public Environment currentEnvironment; //Entorno actual
 
     public CompilerVisitor()
     {
         currentEnvironment = new Environment(null);
         Embeded.Generate(currentEnvironment);
     }
+
+public void ExecuteMain()
+{
+
+    if (!currentEnvironment.Symbols.ContainsKey("main"))
+    {
+        throw new Exception("Error: No se encontró la función 'main'.");
+    }
+
+   
+    var mainFunc = currentEnvironment.Symbols["main"] as FunctionValue;  // Obtener la función main registrada
+
+    if (mainFunc == null)
+    {
+        throw new Exception("Error: 'main' no es una función válida.");
+    }
+
+    // Ejecutar la función 'main'
+    mainFunc.invocable.Invoke(new List<ValueWrapper>(), this);
+}
+
+
 
     // VisitProgram
     public override ValueWrapper VisitProgram(LanguageParser.ProgramContext context)
@@ -31,55 +55,83 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
     // VisitVarDcl
     public override ValueWrapper VisitVarDcl(LanguageParser.VarDclContext context)
     {
+
         string id = context.ID().GetText();
 
-        // Caso: Declaración explícita con tipo y valor (var <identificador> <Tipo> = <Expresión>;)
-        if (context.expr() != null && context.type() != null)
+        
+        if (context.expr() is LanguageParser.InStructContext Iscontext){
+        
+            string id2 = Iscontext.ID().GetText();
+            ValueWrapper value = currentEnvironment.GetSymbol(id2, Iscontext.Start);
+            if (value is  StructValue){
+                Visit(context.expr());
+            }
+            
+        }
+        else if (context.expr() != null && context.type() != null)
         {
             string type = context.type().GetText();
             ValueWrapper value = Visit(context.expr());
 
             // Validación de tipos directamente
             if (!((type == "int" && value is IntValue) ||
-                (type == "float64" && value is FloatValue) || // Permitir int -> float
+                (type == "float64" && value is FloatValue) ||
                 (type == "string" && value is StringValue) ||
-                (type == "bool" && value is BoolValue)))
+                (type == "bool" && value is BoolValue) ||
+                (type == "rune" && value is RuneValue)))
             {
-                throw new SemanticError($"Error: No se puede asignar un valor de tipo {value.GetType().Name} a una variable de tipo {type}", context.Start);
+                throw new SemanticError($"Error: el tipo de valor {value.GetType().Name} no coicide a una variable de tipo {type}", context.Start);
             }
 
-            currentEnvironment.DeclareVariable(id, value, context.Start);
+            currentEnvironment.DeclareSymbol(id, value, context.Start);
         }
 
-        // Caso: Declaración explícita con tipo y sin valor (var <identificador> <Tipo>;)
+        // var <identificador> <Tipo>
         else if (context.expr() == null && context.type() != null)
         {
-            // Obtener el tipo de la variable
+
             string type = context.type().GetText();
 
-            // Declarar la variable con tipo explícito, pero sin valor
-            // Aquí podrías usar un valor por defecto según el tipo, por ejemplo null o un valor cero
+
+            // Valor por defecto según el tipo
             ValueWrapper defaultValue = type switch
             {
                 "int" => new IntValue(0),
-                "float" => new FloatValue(0.0f),
+                "float64" => new FloatValue(0.0m),
                 "string" => new StringValue(""),
                 "bool" => new BoolValue(false),
-                _ => throw new SemanticError($"Tipo desconocido: {type}", context.Start)
+                "rune" => new RuneValue(' '),
+                _ => throw new SemanticError($"Error Semantico: tipo no validado: {type}", context.Start)
             };
 
-            currentEnvironment.DeclareVariable(id, defaultValue, context.Start);
+
+            currentEnvironment.DeclareSymbol(id, defaultValue, context.Start);
         }
-        // Caso: Declaración implícita infiriendo el tipo (<identificador> := <Expresión> ;)
+        // <identificador> := <Expresión>
         else if (context.expr() != null && context.type() == null)
         {
-            // Evaluar la expresión y obtener su tipo
+
             ValueWrapper value = Visit(context.expr());
 
-            // Declarar la variable con el valor inferido
-            currentEnvironment.DeclareVariable(id, value, context.Start);
+            currentEnvironment.DeclareSymbol(id, value, context.Start);
         }
 
+        return defaultVoid;
+    }
+
+
+    // VisitBlockStmt
+    public override ValueWrapper VisitBlockStmt(LanguageParser.BlockStmtContext context)
+    {
+        Environment previousEnvironment = currentEnvironment;
+        currentEnvironment = new Environment(currentEnvironment);
+
+        foreach (var stmt in context.dcl())
+        {
+            Visit(stmt);
+        }
+
+        currentEnvironment = previousEnvironment;
         return defaultVoid;
     }
 
@@ -87,9 +139,146 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
     // VisitAssign
     public override ValueWrapper VisitAssign(LanguageParser.AssignContext context)
     {
-        string id = context.ID().GetText();
-        ValueWrapper value = Visit(context.expr());
-        return currentEnvironment.AssignVariable(id, value, context.Start);
+        var assintation = context.expr(0);
+        ValueWrapper value = Visit(context.expr(1));
+
+        
+        if (assintation is LanguageParser.IdentifierContext idContext && context.expr(1) is not LanguageParser.CalleeContext)
+        {
+            string id = idContext.ID().GetText();
+            ValueWrapper variable = currentEnvironment.GetSymbol(id, context.Start);
+            // Si la variable ya existe, validar que el tipo de dato coincida
+            if (variable != null && value.GetType() != variable.GetType())
+            {
+                throw new SemanticError($"Error Semantico: el tipo {value.GetType()} no coicidi con variable '{id}'", context.Start);
+            }
+
+            //Se le pasa el nuevo dato a la variable
+            return currentEnvironment.AssignSymbol(id, value, context.Start);
+        }
+        else if (assintation is LanguageParser.CalleeContext calleeContext)
+        {
+            ValueWrapper callee = Visit(calleeContext.expr());
+
+            for (int i = 0; i < calleeContext.call().Length; i++)
+            {
+                var acciones = calleeContext.call(i);
+
+                if (i == calleeContext.call().Length - 1)
+                {
+                    if (acciones is LanguageParser.GetContext propidades)
+                    {
+                        if (callee is InstanciaValue instanciaValue)
+                        {
+                            var instancia = instanciaValue.instancia;
+                            var propiedadName = propidades.ID().GetText();
+                            instancia.SeT(propiedadName, value);
+                        }
+                        else
+                        {
+                            throw new SemanticError("Error Semantico: Propiedad invalida o no encontrada", context.Start);
+                        }
+                    }
+                    else
+                    {
+                        throw new SemanticError("Error Semantico: Asignacion Invalidad", context.Start);
+                    }
+
+                }
+
+                if (acciones is LanguageParser.FuncCallContext funcall)
+                {
+                    if (callee is FunctionValue functionValue)
+                    {
+                        callee = Visitcall(functionValue.invocable, funcall.args());
+                    }
+                    else
+                    {
+                        throw new SemanticError("Error Semantico: Funcion invalida o no encontrada", context.Start);
+                    }
+                }
+                else if (acciones is LanguageParser.GetContext propidades)
+                {
+                    if (callee is InstanciaValue instanciaValue)
+                    {
+                        callee = instanciaValue.instancia.Get(propidades.ID().GetText(), propidades.Start);
+                    }
+                    else
+                    {
+                        throw new SemanticError("Error Semantico: Propiedad invalida o no encontrada", context.Start);
+                    }
+                }
+
+            }
+            return callee;
+        }
+
+        else if (assintation is LanguageParser.IndexContext indexContext)
+        {
+            string id = indexContext.ID().GetText();
+            ValueWrapper index = Visit(indexContext.expr());
+            ValueWrapper array = currentEnvironment.GetSymbol(id, context.Start);
+
+
+            if (array is not ArrayValue)
+            {
+                throw new SemanticError("Error Semantico: No es un valor invalido", context.Start);
+            }
+
+            if (index is not IntValue)
+            {
+                throw new SemanticError("Error Semantico: Indice invalido", context.Start);
+            }
+
+            List<ValueWrapper> arrayValues = (array as ArrayValue).Value;
+            int i = (index as IntValue).Value;
+
+            if (i < 0 || i >= arrayValues.Count)
+            {
+                throw new SemanticError("Error Semantico: Indice fuera de rango", context.Start);
+            }
+
+            arrayValues[i] = value;
+            return value;
+
+        }
+        else if (context.expr(1) is LanguageParser.CalleeContext calleContext)
+        {
+
+        }
+        else if (assintation is LanguageParser.MatrixIndexContext matrixIndexContext)
+        {
+            string id = matrixIndexContext.ID().GetText();
+            ValueWrapper rowIndex = Visit(matrixIndexContext.expr(0));
+            ValueWrapper colIndex = Visit(matrixIndexContext.expr(1));
+            ValueWrapper matrix = currentEnvironment.GetSymbol(id, context.Start);
+
+            if (matrix is not MatrixValue matrixValue)
+            {
+                throw new SemanticError("Error Semántico: No es una matriz", context.Start);
+            }
+
+            if (rowIndex is not IntValue row || colIndex is not IntValue col)
+            {
+                throw new SemanticError("Error Semántico: Índices de matriz inválidos", context.Start);
+            }
+
+            if (row.Value < 0 || row.Value >= matrixValue.Value.Count ||
+                col.Value < 0 || col.Value >= matrixValue.Value[row.Value].Count)
+            {
+                throw new SemanticError("Error Sematico: indice fuera de rango", context.Start);
+            }
+
+            matrixValue.Value[row.Value][col.Value] = value;
+            return value;
+        }
+        else
+        {
+            throw new SemanticError("Error Semantico: Asignacion Invalida", context.Start);
+        }
+
+        return defaultVoid;
+
     }
 
 
@@ -104,11 +293,11 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
     public override ValueWrapper VisitIdentifier(LanguageParser.IdentifierContext context)
     {
         string id = context.ID().GetText();
-        return currentEnvironment.GetVariable(id, context.Start);
+        return currentEnvironment.GetSymbol(id, context.Start);
     }
 
     //VISITEMBEDDED
-    public override ValueWrapper VisitEmbedded([NotNull] LanguageParser.EmbeddedContext context)
+    public override ValueWrapper VisitEmbedded( LanguageParser.EmbeddedContext context)
     {
         string id = context.EMBEDDED().GetText();
         return currentEnvironment.GetEmbeded(id, context.Start);
@@ -132,7 +321,7 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
     public override ValueWrapper VisitFloat(LanguageParser.FloatContext context)
     {
 
-        return new FloatValue(float.Parse(context.FLOAT().GetText(), CultureInfo.InvariantCulture));
+        return new FloatValue(decimal.Parse(context.FLOAT().GetText(), CultureInfo.InvariantCulture));
     }
 
 
@@ -146,10 +335,11 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
     // VisitString
     public override ValueWrapper VisitString(LanguageParser.StringContext context)
     {
-        return new StringValue(context.STRING().GetText());
+        string text = context.STRING().GetText();
+        text = text.Substring(1, text.Length - 2); // Elimina las comillas inicial y final
+        return new StringValue(text);
     }
 
-    
     //VisitRune
     public override ValueWrapper VisitRune(LanguageParser.RuneContext context)
     {
@@ -176,7 +366,7 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
             (IntValue l, FloatValue r, "-") => new FloatValue(l.Value - r.Value), //int - float64
             (FloatValue l, FloatValue r, "-") => new FloatValue(l.Value - r.Value), //float64 - float64
             (FloatValue l, IntValue r, "-") => new FloatValue(l.Value - r.Value), //float64 - int
-            _ => throw new SemanticError("Operacion Invalida", context.Start)
+            _ => throw new SemanticError("Error Semanantico: Operacion Invalida", context.Start)
         };
     }
 
@@ -187,6 +377,12 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
         ValueWrapper left = Visit(context.expr(0));
         ValueWrapper right = Visit(context.expr(1));
         var op = context.op.Text;
+
+        // Verificar división o módulo por cero antes de ejecutar la operación
+        if ((op == "/" || op == "%") && right is IntValue { Value: 0 } or FloatValue { Value: 0 })
+        {
+            throw new SemanticError("Error Semantico: División o módulo entre cero", context.Start);
+        }
 
         try
         {
@@ -204,17 +400,13 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
 
                 (IntValue l, IntValue r, "%") when r.Value != 0 => new IntValue(l.Value % r.Value), // int % int
 
-                (IntValue _, IntValue r, ("/" or "%")) when r.Value == 0 => throw new SemanticError("Error: División o módulo entre cero", context.Start),
-                (IntValue _, FloatValue r, ("/" or "%")) when r.Value == 0 => throw new SemanticError("Error: División o módulo entre cero", context.Start),
-                (FloatValue _, FloatValue r, ("/" or "%")) when r.Value == 0 => throw new SemanticError("Error: División o módulo entre cero", context.Start),
-                (FloatValue _, IntValue r, ("/" or "%")) when r.Value == 0 => throw new SemanticError("Error: División o módulo entre cero", context.Start),
 
-                _ => throw new SemanticError("Operacion Invalida", context.Start)
+                _ => throw new SemanticError("Error Semantico: Operacion Invalida", context.Start)
             };
         }
         catch (DivideByZeroException)
         {
-            throw new SemanticError("Error: División o módulo entre cero", context.Start);
+            throw new SemanticError("Error Semantico: División o módulo entre cero", context.Start);
         }
     }
 
@@ -229,14 +421,14 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
 
         try
         {
-            left = currentEnvironment.GetVariable(variableName, context.Start); // Se ovbtiene el valor de la variable
+            left = currentEnvironment.GetSymbol(variableName, context.Start); // Se ovbtiene el valor de la variable
         }
         catch (SemanticError)
         {
-            throw new SemanticError($"Error: La variable '{variableName}' no está definida", context.Start);
+            throw new SemanticError($"Error Semantico: La variable '{variableName}' no está definida", context.Start);
         }
 
-       
+
         ValueWrapper result = (left, right, op) switch
         {
             (IntValue l, IntValue r, "+=") => new IntValue(l.Value + r.Value), // int + int
@@ -247,11 +439,11 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
             (IntValue l, IntValue r, "-=") => new IntValue(l.Value + r.Value), // int - int
             (FloatValue l, FloatValue r, "-=") => new FloatValue(l.Value + r.Value), //float64 - float64
             (FloatValue l, IntValue r, "-=") => new FloatValue(l.Value + r.Value), //float64 - int
-            _ => throw new SemanticError($"Error: No se puede aplicar '{op}' entre {left.GetType().Name} y {right.GetType().Name}.", context.Start)
+            _ => throw new SemanticError($"Error Semantico: No se puede aplicar '{op}' entre {left.GetType().Name} y {right.GetType().Name}.", context.Start)
         };
 
-        // Actualizar la variable en el entorno
-        currentEnvironment.AssignVariable(variableName, result, context.Start);
+        // Actualizar la variable en el entorno que se encuentra
+        currentEnvironment.AssignSymbol(variableName, result, context.Start);
 
         return result;
     }
@@ -265,38 +457,80 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
         {
             IntValue i => new IntValue(-i.Value),
             FloatValue f => new FloatValue(-f.Value),
-            _ => throw new SemanticError("Operacion invalida", context.Start)
+            _ => throw new SemanticError("Error Semantico: Operacion invalida", context.Start)
         };
     }
-   
+
+    //VisitIncrement
+    public override ValueWrapper VisitIncrement(LanguageParser.IncrementContext context)
+    {
+        string id = context.ID().GetText();
+        ValueWrapper left;
+        left = currentEnvironment.GetSymbol(id, context.Start); //buscar la variable en el entorno actual
+
+        ValueWrapper result = left switch
+        {
+            IntValue l => new IntValue(l.Value + 1),
+            FloatValue f => new FloatValue(f.Value + 1),
+            _ => throw new SemanticError($"Error Semantico: Operacion invalida  {left.GetType().Name}.", context.Start)
+        };
+
+        currentEnvironment.AssignSymbol(id, result, context.Start);
+
+        return result;
+    }
+
+    //VisitDecrement
+    public override ValueWrapper VisitDecrement(LanguageParser.DecrementContext context)
+    {
+        string id = context.ID().GetText();
+        ValueWrapper left;
+        //buscar la variable en el entorno actual
+        left = currentEnvironment.GetSymbol(id, context.Start);
+
+        ValueWrapper result = left switch
+        {
+            IntValue l => new IntValue(l.Value - 1),
+            FloatValue f => new FloatValue(f.Value - 1),
+            _ => throw new SemanticError($"Error Semantico: Operacion invalida  {left.GetType().Name}.", context.Start)
+        };
+
+
+        currentEnvironment.AssignSymbol(id, result, context.Start);
+
+        return result;
+    }
+
 
     // VisitEquality
     public override ValueWrapper VisitEquality(LanguageParser.EqualityContext context)
-        {
-            ValueWrapper left = Visit(context.expr(0));
-            ValueWrapper right = Visit(context.expr(1));
-            var op = context.op.Text;
+    {
+        ValueWrapper left = Visit(context.expr(0));
+        ValueWrapper right = Visit(context.expr(1));
 
-            return (left, right, op) switch
-            {
-                (IntValue l, IntValue r, "==") => new BoolValue(l.Value == r.Value), // int == int
-                (IntValue l, IntValue r, "!=") => new BoolValue(l.Value != r.Value), // int != int
-                (FloatValue l, FloatValue r, "==") => new BoolValue(l.Value == r.Value), // float64 == float64
-                (FloatValue l, FloatValue r, "!=") => new BoolValue(l.Value != r.Value), // float64 != float64
-                (IntValue l, FloatValue r, "==") => new BoolValue(l.Value == r.Value), // int == float64
-                (IntValue l, FloatValue r, "!=") => new BoolValue(l.Value != r.Value), // int != float64
-                (FloatValue l, IntValue r, "==") => new BoolValue(l.Value == r.Value), // float64 == int
-                (FloatValue l, IntValue r, "!=") => new BoolValue(l.Value != r.Value), // float64 != int
-                (BoolValue l, BoolValue r, "==") => new BoolValue(l.Value == r.Value), // bool == bool
-                (BoolValue l, BoolValue r, "!=") => new BoolValue(l.Value != r.Value), // bool != bool
-                (StringValue l, StringValue r, "==") => new BoolValue(l.Value == r.Value), // string == string
-                (StringValue l, StringValue r, "!=") => new BoolValue(l.Value != r.Value), // string != string
-                (RuneValue l, RuneValue r, "==") => new BoolValue(l.Value == r.Value), // rune == rune
-                (RuneValue l, RuneValue r, "!=") => new BoolValue(l.Value != r.Value), // rune != rune
-                
-                _ => throw new SemanticError("Operacion Invalida", context.Start)
-            };
-        }
+
+        var op = context.op.Text;
+
+        return (left, right, op) switch
+        {
+            (IntValue l, IntValue r, "==") => new BoolValue(l.Value == r.Value), // int == int
+            (IntValue l, IntValue r, "!=") => new BoolValue(l.Value != r.Value), // int != int
+            (FloatValue l, FloatValue r, "==") => new BoolValue(l.Value == r.Value), // float64 == float64
+            (FloatValue l, FloatValue r, "!=") => new BoolValue(l.Value != r.Value), // float64 != float64
+            (IntValue l, FloatValue r, "==") => new BoolValue(l.Value == r.Value), // int == float64
+            (IntValue l, FloatValue r, "!=") => new BoolValue(l.Value != r.Value), // int != float64
+            (FloatValue l, IntValue r, "==") => new BoolValue(l.Value == r.Value), // float64 == int
+            (FloatValue l, IntValue r, "!=") => new BoolValue(l.Value != r.Value), // float64 != int
+            (BoolValue l, BoolValue r, "==") => new BoolValue(l.Value == r.Value), // bool == bool
+            (BoolValue l, BoolValue r, "!=") => new BoolValue(l.Value != r.Value), // bool != bool
+            (StringValue l, StringValue r, "==") => new BoolValue(l.Value == r.Value), // string == string
+            (StringValue l, StringValue r, "!=") => new BoolValue(l.Value != r.Value), // string != string
+            (RuneValue l, RuneValue r, "==") => new BoolValue(l.Value == r.Value), // rune == rune
+            (RuneValue l, RuneValue r, "!=") => new BoolValue(l.Value != r.Value), // rune != rune
+
+            _ => throw new SemanticError("Error Semantico: Operacion Invalida", context.Start)
+        };
+    }
 
 
     // VisitRelational
@@ -312,7 +546,7 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
             (IntValue l, IntValue r, "<=") => new BoolValue(l.Value <= r.Value), //int <= int
             (IntValue l, IntValue r, ">") => new BoolValue(l.Value > r.Value), //int > int
             (IntValue l, IntValue r, ">=") => new BoolValue(l.Value >= r.Value), //int >= int
- 
+
             (FloatValue l, FloatValue r, "<") => new BoolValue(l.Value < r.Value), // float64 < float64
             (FloatValue l, FloatValue r, "<=") => new BoolValue(l.Value <= r.Value), // float64 <= float64
             (FloatValue l, FloatValue r, ">") => new BoolValue(l.Value > r.Value), // float64 > float64
@@ -334,7 +568,7 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
             (RuneValue l, RuneValue r, ">") => new BoolValue(l.Value > r.Value),   // Rune > Rune
             (RuneValue l, RuneValue r, ">=") => new BoolValue(l.Value >= r.Value), // Rune >= Rune
 
-            _ => throw new SemanticError("Operacion Invalida", context.Start)
+            _ => throw new SemanticError("Error Semantico: Operacion Invalida", context.Start)
         };
     }
 
@@ -349,7 +583,7 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
         {
             (BoolValue l, BoolValue r, "&&") => new BoolValue(l.Value && r.Value), // bool && bool
             (BoolValue l, BoolValue r, "||") => new BoolValue(l.Value || r.Value), // bool || bool
-            _ => throw new SemanticError("Operacion Invalida", context.Start)
+            _ => throw new SemanticError("Error Semantico: Operacion Invalida", context.Start)
         };
     }
 
@@ -360,9 +594,160 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
         ValueWrapper value = Visit(context.expr());
         if (value is not BoolValue)
         {
-            throw new SemanticError("Operacion Invalida", context.Start);
+            throw new SemanticError("Error Semantico: Operacion Invalida", context.Start);
         }
         return new BoolValue(!(value as BoolValue).Value);
+    }
+
+    //VisitSlice
+    public override ValueWrapper VisitSlice(LanguageParser.SliceContext context)
+    {
+        string id = context.ID().GetText();
+        List<ValueWrapper> Arrayvalues = new List<ValueWrapper>();
+        currentEnvironment.DeclareSymbol(id, new ArrayValue(Arrayvalues), context.Start);
+
+        return defaultVoid;
+    }
+
+    //VisitSlices retorna la lista de expresiones
+    public override ValueWrapper VisitSlices(LanguageParser.SlicesContext context)
+    {
+        string type = context.type().GetText();
+        List<ValueWrapper> Arrayvalues = new List<ValueWrapper>();
+        if (context.args() != null)
+        {
+            var args = context.args();
+            foreach (var expr in args.expr())
+            {
+                var value = Visit(expr);
+
+                if (!((type == "int" && value is IntValue) ||
+                      (type == "float64" && value is FloatValue) ||
+                      (type == "string" && value is StringValue) ||
+                      (type == "bool" && value is BoolValue)))
+                {
+                    throw new SemanticError($"Error Semantico: el tipo de valor {value.GetType().Name} no coincide con el tipo {type} del Slice", context.Start);
+                }
+
+                Arrayvalues.Add(value);
+            }
+        }
+
+        return new ArrayValue(Arrayvalues); //retorna la lista de expresiones para los slices
+    }
+
+    //VisitIndex
+    public override ValueWrapper VisitIndex(LanguageParser.IndexContext context)
+    {
+        string id = context.ID().GetText();
+        ValueWrapper index = Visit(context.expr());
+        ValueWrapper variable = currentEnvironment.GetSymbol(id, context.Start);
+
+        if (variable is not ArrayValue && variable is not MatrixValue)
+        {
+            throw new SemanticError("Error Semántico: No es un arreglo ni una matriz", context.Start);
+        }
+
+        if (index is not IntValue intIndex)
+        {
+            throw new SemanticError("Error Semántico: Índice inválido", context.Start);
+        }
+
+        int i = intIndex.Value;
+
+        if (variable is ArrayValue arrayValue)
+        {
+            // Acceso a un array normal
+            if (i < 0 || i >= arrayValue.Value.Count)
+            {
+                throw new SemanticError("Error Semántico: Índice fuera de rango", context.Start);
+            }
+            return arrayValue.Value[i];
+        }
+        else if (variable is MatrixValue matrixValue)
+        {
+            // Acceso a una fila de la matriz (retorna una nueva ArrayValue con la fila seleccionada)
+            if (i < 0 || i >= matrixValue.Value.Count)
+            {
+                throw new SemanticError("Error Semántico: Índice fuera de rango", context.Start);
+            }
+            return new ArrayValue(matrixValue.Value[i]);
+        }
+
+        throw new SemanticError("Error inesperado en VisitIndex", context.Start);
+    }
+
+
+    //VisitMatrix
+    public override ValueWrapper VisitMatrix(LanguageParser.MatrixContext context)
+    {
+        string id = context.ID().GetText();
+        string tipo = context.type().GetText();
+
+        List<List<ValueWrapper>> Arrayvalues = new List<List<ValueWrapper>>();  // Matriz vacía
+
+        // filas de la matriz
+        if (context.args() != null)
+        {
+            // expresiones dentro de las llaves
+            foreach (var arg in context.args())
+            {
+                List<ValueWrapper> row = new List<ValueWrapper>();  // Fila vacía
+
+
+                foreach (var expr in arg.expr())
+                {
+                    var value = Visit(expr);
+
+                    if (!((tipo == "int" && value is IntValue) ||
+                          (tipo == "float64" && value is FloatValue) ||
+                          (tipo == "string" && value is StringValue) ||
+                          (tipo == "bool" && value is BoolValue)))
+                    {
+                        throw new SemanticError($"Error Semantico: el tipo de valor {value.GetType().Name} no coincide con el tipo {tipo} de la matriz", context.Start);
+                    }
+
+                    row.Add(value);
+                }
+
+                Arrayvalues.Add(row); // se agrega la fila a la matriz
+            }
+        }
+
+        currentEnvironment.DeclareSymbol(id, new MatrixValue(Arrayvalues), context.Start);
+
+
+        return defaultVoid;
+    }
+
+    //VisitMatrixIndex
+    public override ValueWrapper VisitMatrixIndex([NotNull] LanguageParser.MatrixIndexContext context)
+    {
+        string id = context.ID().GetText();
+        ValueWrapper index = Visit(context.expr(0));
+        ValueWrapper index2 = Visit(context.expr(1));
+        ValueWrapper matrix = currentEnvironment.GetSymbol(id, context.Start);
+
+        if (matrix is not MatrixValue)
+        {
+            throw new SemanticError("Error Semantico: No es una matriz", context.Start);
+        }
+
+        if (index is not IntValue || index2 is not IntValue)
+        {
+            throw new SemanticError("Error Semantico: Indice invalido", context.Start);
+        }
+
+        List<List<ValueWrapper>> matrixValues = (matrix as MatrixValue).Value;
+        int i = (index as IntValue).Value;
+        int j = (index2 as IntValue).Value;
+
+        if (i < 0 || i >= matrixValues.Count || j < 0 || j >= matrixValues[i].Count)
+        {
+            throw new SemanticError("Error Semantico: Indice fuera de rango", context.Start);
+        }
+
+        return matrixValues[i][j];
     }
 
 
@@ -373,7 +758,7 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
 
         if (condition is not BoolValue)
         {
-            throw new SemanticError("Condicion invalida", context.Start);
+            throw new SemanticError("Error Semantico: Condicion invalida", context.Start);
         }
 
         if ((condition as BoolValue).Value)
@@ -390,59 +775,77 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
 
 
     //VisitSwitchStmt
+
     public override ValueWrapper VisitSwitchStmt(LanguageParser.SwitchStmtContext context)
     {
         ValueWrapper condition = Visit(context.expr());
 
-        // ejecuta el primero que coincida
-        foreach (var caseClause in context.caseClause())
+
+        foreach (var cases in context.cases())
         {
-            ValueWrapper caseValue = Visit(caseClause.expr());
+            ValueWrapper caseValue = Visit(cases.expr());
 
             if (condition.Equals(caseValue))
             {
-                foreach (var stmt in caseClause.stmt())
+                try
                 {
-                    Visit(stmt);  
+                    foreach (var stmt in cases.stmt())
+                    {
+                        Visit(stmt);
+                    }
                 }
-                return defaultVoid;  
+                catch (BreakException)
+                {
+                    return defaultVoid;
+                }
+
+                return defaultVoid;
             }
         }
 
-        // Si no hubo coincidencia, procesamos el 'default' si existe
-        if (context.defaultStmt() != null)
+        // Si no hubo coincidencia va al 'default'
+        if (context.defaultSwitch() != null)
         {
-            Visit(context.defaultStmt());
+            try
+            {
+                Visit(context.defaultSwitch());
+            }
+            catch (BreakException)
+            {
+                return defaultVoid;
+            }
         }
 
         return defaultVoid;
     }
 
 
-    // VisitCaseClause
-    public override ValueWrapper VisitCaseClause(LanguageParser.CaseClauseContext context)
+    // VisitCases
+
+    public override ValueWrapper VisitCases(LanguageParser.CasesContext context)
     {
-        // sentencias dentro de un 'case'
         foreach (var stmt in context.stmt())
         {
-            Visit(stmt);  // ejecuta cada instrucción del case
+            Visit(stmt);
         }
 
         return defaultVoid;
     }
-        
+
+
 
     //VisitDefaultCase
-    public override ValueWrapper VisitDefaultStmt(LanguageParser.DefaultStmtContext context)
+    public override ValueWrapper VisitDefaultSwitch(LanguageParser.DefaultSwitchContext context)
     {
-        // sentencia del 'default'
+
         foreach (var stmt in context.stmt())
         {
-            Visit(stmt); 
+            Visit(stmt);
         }
 
         return defaultVoid;
     }
+
 
 
     // VisitForStmt
@@ -459,6 +862,99 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
         return defaultVoid;
     }
 
+
+    //VisitForCondStmt
+    public override ValueWrapper VisitForCondStmt(LanguageParser.ForCondStmtContext context)
+    {
+       
+
+        ValueWrapper condition = Visit(context.expr());
+
+        if (condition is not BoolValue)
+        {
+            throw new SemanticError("Error Semántico: Condición inválida", context.Start);
+        }
+
+        try
+        {
+            while (condition is BoolValue boolCondition && boolCondition.Value)
+            {
+                try
+                {
+                    Visit(context.stmt());
+                }
+                catch (BreakException)
+                {
+                    break;  // Sale del ciclo
+                }
+                catch (ContinueException)
+                {
+                    condition = Visit(context.expr());
+                    continue;
+                }
+
+                condition = Visit(context.expr());
+            }
+        }
+        finally
+        {
+            
+        }
+
+        return defaultVoid;
+    }
+
+
+    //VisitForRangeStmt
+    public override ValueWrapper VisitForRange(LanguageParser.ForRangeContext context)
+    {
+        string indexVar = context.ID(0).GetText();
+        string valueVar = context.ID(1).GetText();
+        ValueWrapper expresion = Visit(context.expr());
+
+        // Validar que la expresión es una lista o colección iterable
+        if (expresion is not ArrayValue)
+        {
+            throw new SemanticError("Error Semántico: No se puede iterar'", context.Start);
+        }
+
+        Environment previousEnvironment = currentEnvironment;
+        currentEnvironment = new Environment(previousEnvironment);
+
+        //GUARDAR INDICE Y VALOR
+        currentEnvironment.DeclareSymbol(indexVar, new IntValue(0), context.Start);
+        currentEnvironment.DeclareSymbol(valueVar, new IntValue(0), context.Start);
+
+        if (expresion is not ArrayValue arrayValue)
+        {
+            throw new SemanticError("Error Semántico: No se puede iterar, la expresión no es un ArrayValue", context.Start);
+        }
+        List<ValueWrapper> array = arrayValue.Value;
+
+        for (int i = 0; i < array.Count; i++) // Recorrer la expresion 
+        {
+            //Actuliza los valores de las variables
+            currentEnvironment.AssignSymbol(indexVar, new IntValue(i), context.Start);
+            currentEnvironment.AssignSymbol(valueVar, array[i], context.Start);
+
+            try
+            {
+                Visit(context.stmt());
+            }
+            catch (BreakException)
+            {
+                break;
+            }
+            catch (ContinueException)
+            {
+                continue;
+            }
+        }
+
+
+        return defaultVoid;
+    }
+
     public void VisitForBody(LanguageParser.ForStmtContext context)
     {
         ValueWrapper condition = Visit(context.expr(0));
@@ -466,7 +962,7 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
 
         if (condition is not BoolValue)
         {
-            throw new SemanticError("Invalid condition", context.Start);
+            throw new SemanticError("Error Semantico:Condicion invalida", context.Start);
         }
 
         try
@@ -480,6 +976,7 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
         }
         catch (BreakException)
         {
+
             currentEnvironment = lastEnvironment;
         }
         catch (ContinueException)
@@ -490,41 +987,7 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
         }
 
     }
-
-    // VisitBlockStmt
-    public override ValueWrapper VisitBlockStmt(LanguageParser.BlockStmtContext context)
-    {
-        Environment previousEnvironment = currentEnvironment;
-        currentEnvironment = new Environment(currentEnvironment);
-
-        foreach (var stmt in context.dcl())
-        {
-            Visit(stmt);
-        }
-
-        currentEnvironment = previousEnvironment;
-        return defaultVoid;
-    }
-
-
-    // VisitWhileStmt
-    public override ValueWrapper VisitWhileStmt(LanguageParser.WhileStmtContext context)
-    {
-        ValueWrapper condition = Visit(context.expr());
-
-        if (condition is not BoolValue)
-        {
-            throw new SemanticError("Invalid condition", context.Start);
-        }
-
-        while ((condition as BoolValue).Value)
-        {
-            Visit(context.stmt());
-            condition = Visit(context.expr());
-        }
-
-        return defaultVoid;
-    }
+    //BODY DEL FOR
 
 
     //VisitBreakStmt
@@ -556,16 +1019,31 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
     {
         ValueWrapper callee = Visit(context.expr());
 
-        foreach (var call in context.call())
+        foreach (var acciones in context.call())
         {
-            if (callee is FunctionValue functionValue)
+            if (acciones is LanguageParser.FuncCallContext funcall)
             {
-                callee = Visitcall(functionValue.invocable, call.args());
+                if (callee is FunctionValue functionValue)
+                {
+                    callee = Visitcall(functionValue.invocable, funcall.args());
+                }
+                else
+                {
+                    throw new SemanticError("Error Semantico: Funcion invalida o no encontrada", context.Start);
+                }
             }
-            else
+            else if (acciones is LanguageParser.GetContext propidades)
             {
-                throw new SemanticError("Invalid function call", context.Start);
+                if (callee is InstanciaValue instanciaValue)
+                {
+                    callee = instanciaValue.instancia.Get(propidades.ID().GetText(), propidades.Start);
+                }
+                else
+                {
+                    throw new SemanticError("Error Semantico: Propiedad invalida o no encontrada", context.Start);
+                }
             }
+
         }
         return callee;
     }
@@ -581,11 +1059,72 @@ public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
             }
         }
 
-        // if(context != null && arguments.Count != invocable.Arity())
-        // {
-        //     throw new SemanticError("Invalid number of arguments", context.Start);
-        // }
-
         return invocable.Invoke(arguments, this);
     }
+
+    //VisitFuncDcl
+    public override ValueWrapper VisitFuncDcl(LanguageParser.FuncDclContext context)
+    {
+
+        var foranea = new ForeneaFuncion(currentEnvironment, context);
+
+        currentEnvironment.DeclareSymbol(context.ID().GetText(), new FunctionValue(foranea, context.ID().GetText()), context.Start);
+        return defaultVoid;
+    }
+
+    //VisitClassDcl
+    public override ValueWrapper VisitStructDcl(LanguageParser.StructDclContext context)
+    {
+        Dictionary<string, LanguageParser.VarDclContext> props = new Dictionary<string, LanguageParser.VarDclContext>();
+       
+        
+            foreach (var varDcl in context.varDcl())
+        {
+            if (varDcl != null)
+            {   
+                
+                props.Add(varDcl.ID().GetText(), varDcl);
+            }
+
+        }
+
+
+
+        LanguageStruct languageStruct = new LanguageStruct(context.ID().GetText(), props);
+    
+        currentEnvironment.DeclareSymbol(context.ID().GetText(), new StructValue(languageStruct), context.Start);
+        return defaultVoid;
+    }
+
+
+    //Visitstrucprop
+    public override ValueWrapper VisitInStruct(LanguageParser.InStructContext context)
+    {
+
+        ValueWrapper structValue = currentEnvironment.GetSymbol(context.ID().GetText(), context.Start);
+        if (structValue is not StructValue)
+        {
+            throw new SemanticError("Error Semantico: Clase no encontrada", context.Start);
+        }
+
+       
+        List<ValueWrapper> arguments = new List<ValueWrapper>();
+
+        if (context.props() != null)
+        {
+            foreach (var arg in context.props().expr())
+            {
+                arguments.Add(Visit(arg));
+              
+            }
+        }
+
+        var instancia = ((StructValue)structValue).languageStruct.Invoke(arguments, this);
+
+        return instancia;
+
+    }
+
+    //VisitNew
 }
+

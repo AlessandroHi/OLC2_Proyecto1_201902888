@@ -1,7 +1,7 @@
 public class Environment
 {
 
-    public Dictionary<string, ValueWrapper> variables = new Dictionary<string, ValueWrapper>();
+    public Dictionary<string, ValueWrapper> Symbols = new Dictionary<string, ValueWrapper>();
     public Dictionary<string, ValueWrapper> funcEmbeded = new Dictionary<string, ValueWrapper>();
     private Environment? parent;
 
@@ -23,7 +23,7 @@ public class Environment
         }
     }
 
-        public ValueWrapper GetEmbeded(string id, Antlr4.Runtime.IToken token)
+    public ValueWrapper GetEmbeded(string id, Antlr4.Runtime.IToken token)
     {
         if (funcEmbeded.ContainsKey(id))
         {
@@ -34,50 +34,51 @@ public class Environment
         {
             return parent.GetEmbeded(id, token);
         }
-
         throw new SemanticError("Embeded " + id + " not found", token);
     }
 
 
-    public ValueWrapper GetVariable(string id, Antlr4.Runtime.IToken token)
+    public ValueWrapper GetSymbol(string id, Antlr4.Runtime.IToken token)
     {
-        if (variables.ContainsKey(id))
+        if (Symbols.ContainsKey(id))
         {
-            return variables[id];
+            return Symbols[id];
         }
 
         if (parent != null)
         {
-            return parent.GetVariable(id, token);
+            return parent.GetSymbol(id, token);
         }
 
-        throw new SemanticError("Variable " + id + " not found", token);
+        throw new SemanticError("Variable " + id + " no encontrada", token);
     }
 
-    public void DeclareVariable(string id, ValueWrapper value, Antlr4.Runtime.IToken token)
+    public void DeclareSymbol(string id, ValueWrapper value, Antlr4.Runtime.IToken token)
     {
-
-        if (variables.ContainsKey(id))
+       
+        if (Symbols.ContainsKey(id))
         {
-            if(token != null) throw new SemanticError("Variable " + id + " already declared", token);
+            if(token != null) throw new SemanticError("Variable " + id + " ya declarada", token);
         }
         else
         {
-            variables[id] = value;
+           
+            Symbols[id] = value;
+            
         }
     }
 
-    public ValueWrapper AssignVariable(string id, ValueWrapper value , Antlr4.Runtime.IToken token)
+    public ValueWrapper AssignSymbol(string id, ValueWrapper value , Antlr4.Runtime.IToken token)
     {
-        if (variables.ContainsKey(id))
+        if (Symbols.ContainsKey(id))
         {
-            variables[id] = value;
+            Symbols[id] = value;
             return value;
         }
 
         if (parent != null)
         {
-            return parent.AssignVariable(id, value, token);
+            return parent.AssignSymbol(id, value, token);
         }
 
         throw new SemanticError("Variable " + id + " no encontrada", token);

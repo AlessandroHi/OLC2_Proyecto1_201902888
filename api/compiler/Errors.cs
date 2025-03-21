@@ -4,11 +4,10 @@ using Antlr4.Runtime.Misc;
 
 public class SemanticError : Exception
 {
-   
-   private string message;
-   private Antlr4.Runtime.IToken token;
-   
-    public SemanticError(string message, Antlr4.Runtime.IToken token)
+    private string message;
+    private Antlr4.Runtime.IToken? token;
+
+    public SemanticError(string message, Antlr4.Runtime.IToken? token = null)
     {
         this.message = message;
         this.token = token;
@@ -18,10 +17,12 @@ public class SemanticError : Exception
     {
         get
         {
-            return message + " en linea " + token.Line + ", Columnna " + token.Column;
+            if (token != null)
+                return $"{message} en linea {token.Line}, Columna {token.Column}";
+            else
+                return message; // Evita acceder a un token nulo
         }
     }
-
 }
 
 public class LexicalErrorListener : BaseErrorListener, IAntlrErrorListener<int>
@@ -39,3 +40,4 @@ public class SyntaxErrorListener : BaseErrorListener
         throw new ParseCanceledException($"Error sintactico en linea {line}:{charPositionInLine} - {msg}");
     }
 }
+
