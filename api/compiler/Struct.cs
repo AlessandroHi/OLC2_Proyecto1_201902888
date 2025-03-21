@@ -29,22 +29,29 @@ public class LanguageStruct : Invocable
         
          var name = prop.Key;
          var value = prop.Value;
-        Console.WriteLine(name);
-        Console.WriteLine(value.GetText());
+
+        if(value is LanguageParser.VarDclContext context)
+        {
+ 
+            string type = context.type().GetText();
+
+
+            // Valor por defecto según el tipo
+            ValueWrapper defaultValue = type switch
+            {
+                "int" => new IntValue(0),
+                "float64" => new FloatValue(0.0m),
+                "string" => new StringValue(""),
+                "bool" => new BoolValue(false),
+                "rune" => new RuneValue(' '),
+                _ => throw new SemanticError($"Error Semantico: tipo no validado: {type}", context.Start)
+            };
+
+            newInstancia.SeT(name, defaultValue);
+
+
+        }
    
-    
-        
-        if(value.expr() != null)
-        {
-            
-            var val = visitor.Visit(value.expr());
-           
-            newInstancia.SeT(name, val);
-        }
-        else
-        {
-            newInstancia.SeT(name, new VoidValue());
-        }
       }
 
 

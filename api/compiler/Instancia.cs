@@ -12,6 +12,12 @@ public class Instancia {
     {
     
         Propiedades[name] = value;
+
+        foreach(var pro in Propiedades)
+        {
+            Console.WriteLine(pro.Key);
+            Console.WriteLine(pro.Value);
+        }
         
    
     }
@@ -26,4 +32,6 @@ public class Instancia {
 
         throw new SemanticError("Error Semantico: Propiedad " + name + " no encontrada", token);
     }
+
+
 }

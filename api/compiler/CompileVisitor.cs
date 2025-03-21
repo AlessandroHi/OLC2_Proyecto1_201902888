@@ -66,6 +66,10 @@ public void ExecuteMain()
             if (value is  StructValue){
                 Visit(context.expr());
             }
+            else{
+                throw new SemanticError("Error Semantico: No es una estructura", context.Start);
+            }
+            currentEnvironment.DeclareSymbol(id, value, context.Start);
             
         }
         else if (context.expr() != null && context.type() != null)
@@ -1087,7 +1091,6 @@ public void ExecuteMain()
             }
 
         }
-
 
 
         LanguageStruct languageStruct = new LanguageStruct(context.ID().GetText(), props);

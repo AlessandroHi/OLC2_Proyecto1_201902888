@@ -69,6 +69,8 @@ public class PrintEmbeded : Invocable
                     })) + " ]\n"
                 )) + "",
 
+                StructValue structValue => "struct }",
+
                 _ => throw new SemanticError("Error Semantico: parametros invalidos", null)
             };
         }
