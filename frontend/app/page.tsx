@@ -120,7 +120,7 @@ export default function Home() {
 
         {/* Consola/Terminal */}
         <div
-          className={`p-5 rounded-lg font-mono border border-gray-700 shadow-md min-h-[220px] max-h-[220px] overflow-auto ${
+          className={`p-5 rounded-lg font-mono border border-gray-700 shadow-md min-h-[230px] max-h-[230px] overflow-auto ${
             isError ? "bg-black text-red-400" : "bg-black text-green-400"
           }`}
         >
