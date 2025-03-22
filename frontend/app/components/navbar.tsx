@@ -4,9 +4,10 @@ import { useState } from "react";
 
 interface MenuProps {
   code: string;
+  onFileUpload: (content: string) => void; // Nueva prop para manejar el contenido del archivo
 }
 
-export default function Menu({ code }: MenuProps) {
+export default function Menu({ code, onFileUpload }: MenuProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [fileSubmenuOpen, setFileSubmenuOpen] = useState(false);
   const [reportsSubmenuOpen, setReportsSubmenuOpen] = useState(false);
@@ -30,6 +31,19 @@ export default function Menu({ code }: MenuProps) {
 
   const closeModal = () => {
     setIsModalOpen(false);
+  };
+
+  // Función para manejar la selección de archivos
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        onFileUpload(content); // Pasar el contenido al componente padre
+      };
+      reader.readAsText(file);
+    }
   };
 
   // Función para obtener el AST y abrir el modal
@@ -60,7 +74,6 @@ export default function Menu({ code }: MenuProps) {
 
   return (
     <div className="relative">
-
       <button
         className="text-white font-semibold py-2 px-4 bg-indigo-600 hover:bg-indigo-700 rounded"
         onClick={toggleMenu}
@@ -90,7 +103,10 @@ export default function Menu({ code }: MenuProps) {
                   <li className="px-4 py-2 hover:bg-indigo-600 text-white cursor-pointer">
                     New File
                   </li>
-                  <li className="px-4 py-2 hover:bg-indigo-600 text-white cursor-pointer">
+                  <li
+                    className="px-4 py-2 hover:bg-indigo-600 text-white cursor-pointer"
+                    onClick={() => document.getElementById("fileInput")?.click()} // Simular clic en el input de archivo
+                  >
                     Open File
                   </li>
                   <li className="px-4 py-2 hover:bg-indigo-600 text-white cursor-pointer">
@@ -133,6 +149,15 @@ export default function Menu({ code }: MenuProps) {
           </ul>
         </div>
       )}
+
+      {/* Input oculto para seleccionar archivos */}
+      <input
+        id="fileInput"
+        type="file"
+        accept=".glt" // Aceptar solo archivos .go o .txt
+        style={{ display: "none" }}
+        onChange={handleFileSelect}
+      />
 
       {isModalOpen && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-20">

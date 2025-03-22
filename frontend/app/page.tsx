@@ -44,6 +44,25 @@ export default function Home() {
     }
   };
 
+
+  const handleFileOpen = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      console.error("No file selected");
+      return;
+    }
+
+    if (!file.name.endsWith(".glt")) {
+      console.error("Invalid file type. Only .gtl files are allowed.");
+      alert("Solo se permiten archivos con extensión .gtl");
+      return;
+    }
+  };
+
+  const handleFileUpload = (content: string) => {
+    setCode(content);
+  };
+
   
   
   return (
@@ -55,7 +74,7 @@ export default function Home() {
           <h1 className="text-xl font-bold tracking-wide text-white">
             GoLight
           </h1>
-          <Menu code={code} />
+          <Menu code={code} onFileUpload={handleFileUpload} /> 
         </div>
         
         <div className="flex space-x-2">
