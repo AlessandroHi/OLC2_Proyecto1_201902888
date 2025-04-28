@@ -61,9 +61,12 @@ namespace api.Controllers
                 var visitor = new CompilerVisitor();
                 visitor.Visit(tree);
                 visitor.ExecuteMain();
-                
-
-                return Ok(new { result = visitor.output });
+              
+                return Ok(new
+                {
+                    result = visitor.output,
+                    symbols = visitor.symbolTable.getList()
+                });
 
             }
             catch (ParseCanceledException ex)
@@ -109,7 +112,7 @@ namespace api.Controllers
                 return BadRequest(new { error = "Error leer la gramatica" });
             }
 
-  
+
 
             var payload = new
             {
@@ -119,13 +122,14 @@ namespace api.Controllers
                 start = "program"
             };
 
-           
+
             var JsonPayload = JsonSerializer.Serialize(payload);
-            var context = new StringContent(JsonPayload, Encoding.UTF8, "application/json");    
+            var context = new StringContent(JsonPayload, Encoding.UTF8, "application/json");
 
             using (var client = new HttpClient())
             {
-                try{
+                try
+                {
 
                     HttpResponseMessage response = await client.PostAsync("http://lab.antlr.org/parse/", context);
                     response.EnsureSuccessStatusCode();
@@ -134,7 +138,7 @@ namespace api.Controllers
                     using var doc = JsonDocument.Parse(result);
                     var root = doc.RootElement;
 
-                    if(root.TryGetProperty("result", out JsonElement resultElement)&& resultElement.TryGetProperty("svgtree", out JsonElement svgElement))
+                    if (root.TryGetProperty("result", out JsonElement resultElement) && resultElement.TryGetProperty("svgtree", out JsonElement svgElement))
                     {
                         string svgtree = svgElement.GetString() ?? string.Empty;
                         return Content(svgtree, "image/svg+xml");
@@ -144,17 +148,19 @@ namespace api.Controllers
 
 
                 }
-                catch(System.Exception)
+                catch (System.Exception)
                 {
                     return BadRequest(new { error = "Error al conectar con el servidor" });
                 }
-              
+
 
             }
 
 
 
         }
+
+
 
     }
 }

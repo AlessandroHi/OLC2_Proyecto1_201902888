@@ -63,6 +63,7 @@ expr:
     | STRING                                    # String
     | INT                                       # Int
     | ID                                        # Identifier
+    | Nil                                       # Nill
     | RUNE                                      # Rune
     | EMBEDDED                                  # Embedded
     | '(' expr ')'                              # Parens;
@@ -82,6 +83,7 @@ BOOL: 'true' | 'false';
 FLOAT: [0-9]+ '.' [0-9]+;
 STRING: '"' ('\\"' | ~'"')* '"';
 RUNE: '\'' . '\'';
+Nil: 'nil';
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
 
 

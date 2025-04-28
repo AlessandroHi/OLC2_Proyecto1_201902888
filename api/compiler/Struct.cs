@@ -1,62 +1,50 @@
 using analyzer;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 public class LanguageStruct : Invocable
 {
-   public string Name { get; set; }
-   public Dictionary<string, LanguageParser.VarDclContext> Props { get; set; }
-  
-   public LanguageStruct(string name , Dictionary<string, LanguageParser.VarDclContext> props)
-   {
-       Name = name;
-       Props = props;
- 
-   }
+    public string Name { get; set; }
+    public Dictionary<string, LanguageParser.VarDclContext> Props { get; set; }
 
+    public LanguageStruct(string name, Dictionary<string, LanguageParser.VarDclContext> props)
+    {
+        Name = name;
+        Props = props;
+    }
 
-   public int Arity()
-   {
-
-         return 0;
-   }
+    public int Arity()
+    {
+        return Props.Count;
+    }
 
     public ValueWrapper Invoke(List<ValueWrapper> arguments, CompilerVisitor visitor)
     {
-      var newInstancia = new Instancia(this);
+        var newInstancia = new Instancia(this);
 
-
-      foreach (var prop in Props)
-      {
-        
-         var name = prop.Key;
-         var value = prop.Value;
-
-        if(value is LanguageParser.VarDclContext context)
+        foreach (var prop in Props)
         {
- 
-            string type = context.type().GetText();
+            var valuede = visitor.Visit(prop.Value); 
 
 
-            // Valor por defecto según el tipo
-            ValueWrapper defaultValue = type switch
-            {
-                "int" => new IntValue(0),
-                "float64" => new FloatValue(0.0m),
-                "string" => new StringValue(""),
-                "bool" => new BoolValue(false),
-                "rune" => new RuneValue(' '),
-                _ => throw new SemanticError($"Error Semantico: tipo no validado: {type}", context.Start)
-            };
-
-            newInstancia.SeT(name, defaultValue);
-
-
+            newInstancia.SeT(prop.Key, valuede);
         }
-   
-      }
 
+        // Asignar valores de los argumentos
+        if (Props.Count != arguments.Count)
+        {
+            throw new SemanticError($"Error Semántico: Se esperaban {Props.Count} argumentos, pero se recibieron {arguments.Count}.", null);
+        }
 
-      return new InstanciaValue(newInstancia);
+        for (int i = 0; i < Props.Count; i++)
+        {
+            var prop = Props.ElementAt(i);
+            var value = arguments[i];
+
+            newInstancia.SeT(prop.Key, value);
+        }
+
+        return new InstanciaValue(newInstancia);
     }
-
-     
 }

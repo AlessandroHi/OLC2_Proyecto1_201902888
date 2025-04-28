@@ -1,13 +1,17 @@
 using System.Diagnostics.Eventing.Reader;
 using System.Globalization;
 using System.Reflection.Metadata;
+using System.Security.Cryptography.X509Certificates;
 using analyzer;
 using Antlr4.Runtime.Misc;
 using Microsoft.Extensions.Logging.Console;
+using Proyecto1_OLC2;
 
 public class CompilerVisitor : LanguageBaseVisitor<ValueWrapper>
 {
 
+
+    public SymbolTable symbolTable = new SymbolTable(); 
     public ValueWrapper defaultVoid = new VoidValue();
 
     public string output = "";
@@ -58,6 +62,7 @@ public void ExecuteMain()
 
         string id = context.ID().GetText();
 
+
         
         if (context.expr() is LanguageParser.InStructContext Iscontext){
         
@@ -69,6 +74,9 @@ public void ExecuteMain()
             else{
                 throw new SemanticError("Error Semantico: No es una estructura", context.Start);
             }
+    
+            
+            symbolTable.AddSymbol(new Symbol(id, "Struct", id2, "Global", context.Start.Line, context.Start.Column));
             currentEnvironment.DeclareSymbol(id, value, context.Start);
             
         }
@@ -86,7 +94,7 @@ public void ExecuteMain()
             {
                 throw new SemanticError($"Error: el tipo de valor {value.GetType().Name} no coicide a una variable de tipo {type}", context.Start);
             }
-
+            symbolTable.AddSymbol(new Symbol(id, "Variable", context.type().GetText(), "Global", context.Start.Line, context.Start.Column));
             currentEnvironment.DeclareSymbol(id, value, context.Start);
         }
 
@@ -108,7 +116,7 @@ public void ExecuteMain()
                 _ => throw new SemanticError($"Error Semantico: tipo no validado: {type}", context.Start)
             };
 
-
+            symbolTable.AddSymbol(new Symbol(id, "Variable", type, "Global", context.Start.Line, context.Start.Column));
             currentEnvironment.DeclareSymbol(id, defaultValue, context.Start);
         }
         // <identificador> := <Expresión>
@@ -116,7 +124,11 @@ public void ExecuteMain()
         {
 
             ValueWrapper value = Visit(context.expr());
+            if(value is ArrayValue){
+                symbolTable.AddSymbol(new Symbol(id, "Slice", "int", "main", context.Start.Line, context.Start.Column));
 
+            }
+           
             currentEnvironment.DeclareSymbol(id, value, context.Start);
         }
 
@@ -317,7 +329,7 @@ public void ExecuteMain()
     // VisitInt
     public override ValueWrapper VisitInt(LanguageParser.IntContext context)
     {
-        return new IntValue(int.Parse(context.INT().GetText()));
+        return new IntValue((int.Parse(context.INT().GetText()))*-1);
     }
 
 
@@ -330,7 +342,7 @@ public void ExecuteMain()
 
 
     // VisitBoolean
-    public override ValueWrapper VisitBoolean(LanguageParser.BooleanContext context)
+    public override ValueWrapper VisitBoolean(LanguageParser.BooleanContext context)  
     {
         return new BoolValue(bool.Parse(context.BOOL().GetText()));
     }
@@ -350,6 +362,12 @@ public void ExecuteMain()
         return new RuneValue(context.RUNE().GetText()[1]);
     }
 
+    //VisitNill
+    public override ValueWrapper VisitNill(LanguageParser.NillContext context)
+    {
+        return new VoidValue();
+    }
+    
     // VisitAddSub
     public override ValueWrapper VisitAddSub(LanguageParser.AddSubContext context)
     {
@@ -608,6 +626,7 @@ public void ExecuteMain()
     {
         string id = context.ID().GetText();
         List<ValueWrapper> Arrayvalues = new List<ValueWrapper>();
+        symbolTable.AddSymbol(new Symbol(id, "Variable", "Slice", "Global", context.Start.Line, context.Start.Column));
         currentEnvironment.DeclareSymbol(id, new ArrayValue(Arrayvalues), context.Start);
 
         return defaultVoid;
@@ -637,7 +656,7 @@ public void ExecuteMain()
             }
         }
 
-        return new ArrayValue(Arrayvalues); //retorna la lista de expresiones para los slices
+        return new ArrayValue(Arrayvalues); 
     }
 
     //VisitIndex
@@ -717,7 +736,7 @@ public void ExecuteMain()
                 Arrayvalues.Add(row); // se agrega la fila a la matriz
             }
         }
-
+        symbolTable.AddSymbol(new Symbol(id, "Variable", "Matriz", "Global", context.Start.Line, context.Start.Column));
         currentEnvironment.DeclareSymbol(id, new MatrixValue(Arrayvalues), context.Start);
 
 
@@ -1072,6 +1091,11 @@ public void ExecuteMain()
 
         var foranea = new ForeneaFuncion(currentEnvironment, context);
 
+        if(context.type() != null)
+        {
+            symbolTable.AddSymbol(new Symbol(context.ID().GetText(), "Funcion", context.type().GetText() ,"Global", context.Start.Line, context.Start.Column));
+        }
+        symbolTable.AddSymbol(new Symbol(context.ID().GetText(), "Funcion", "func","Global", context.Start.Line, context.Start.Column));
         currentEnvironment.DeclareSymbol(context.ID().GetText(), new FunctionValue(foranea, context.ID().GetText()), context.Start);
         return defaultVoid;
     }
@@ -1081,20 +1105,20 @@ public void ExecuteMain()
     {
         Dictionary<string, LanguageParser.VarDclContext> props = new Dictionary<string, LanguageParser.VarDclContext>();
        
-        
             foreach (var varDcl in context.varDcl())
         {
             if (varDcl != null)
             {   
-                
+            
                 props.Add(varDcl.ID().GetText(), varDcl);
+                
             }
 
         }
 
-
         LanguageStruct languageStruct = new LanguageStruct(context.ID().GetText(), props);
-    
+      
+        symbolTable.AddSymbol(new Symbol(context.ID().GetText(), "Struct", context.ID().GetText(), "Global", context.Start.Line, context.Start.Column));
         currentEnvironment.DeclareSymbol(context.ID().GetText(), new StructValue(languageStruct), context.Start);
         return defaultVoid;
     }
@@ -1128,6 +1152,6 @@ public void ExecuteMain()
 
     }
 
-    //VisitNew
+
 }
 

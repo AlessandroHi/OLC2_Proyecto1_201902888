@@ -4,12 +4,21 @@ import { useState } from "react";
 import Menu from "./components/navbar";
 import Image from "next/image";
 import logo from "../public/img/logo.png";
+import { Console } from "console";
 
 const API_URL = "http://localhost:5159";
 
 export default function Home() {
   const [code, setCode] = useState<string>("");
   const [output, setOutput] = useState<string>("");
+  const [listSymbols, setListSymbols] = useState<{
+    id: string;
+    tipo: string;
+    tipoDato: string;
+    ambito: string;
+    linea: number;
+    columna: number;
+  }[] | null>(null);
   const [isError, setIsError] = useState<boolean>(false); // Estado para controlar el color del output
   const [cursorPosition, setCursorPosition] = useState<{
     line: number;
@@ -37,6 +46,7 @@ export default function Home() {
       }
 
       setOutput(data.result);
+      setListSymbols(data.symbols);
       setIsError(false); // Si no hay error
     } catch (err) {
       setOutput(err instanceof Error ? err.message : "Error desconocido");
@@ -74,7 +84,8 @@ export default function Home() {
           <h1 className="text-xl font-bold tracking-wide text-white">
             GoLight
           </h1>
-          <Menu code={code} onFileUpload={handleFileUpload} /> 
+          <Menu code={code} onFileUpload={handleFileUpload} listSymbols={listSymbols} /> 
+
         </div>
         
         <div className="flex space-x-2">

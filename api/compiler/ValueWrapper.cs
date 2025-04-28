@@ -6,6 +6,8 @@ public record FloatValue(decimal Value) : ValueWrapper;
 public record StringValue(string Value) : ValueWrapper;
 public record BoolValue(bool Value) : ValueWrapper;
 public record RuneValue(char Value) : ValueWrapper;
+public record NillValue(object? Value) : ValueWrapper;
+
 
 
 

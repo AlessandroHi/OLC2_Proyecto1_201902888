@@ -37,6 +37,7 @@ public class PrintEmbeded : Invocable
 
     public ValueWrapper Invoke(List<ValueWrapper> args, CompilerVisitor visitor)
     {
+
         var output = "";
         foreach (var arg in args)
         {
@@ -69,7 +70,7 @@ public class PrintEmbeded : Invocable
                     })) + " ]\n"
                 )) + "",
 
-                StructValue structValue => "struct }",
+                StructValue structValue => structValue.languageStruct.Name + " { " + string.Join(", ", structValue.languageStruct.Props.Select(p => p.Key + ": " + p.Value)) + " }",
 
                 _ => throw new SemanticError("Error Semantico: parametros invalidos", null)
             };
@@ -79,6 +80,11 @@ public class PrintEmbeded : Invocable
         visitor.output += output;
         return visitor.defaultVoid;
     }
+
+
+    
+
+    
 }
 
 public class StrconvAtoi : Invocable

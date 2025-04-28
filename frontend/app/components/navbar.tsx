@@ -4,14 +4,23 @@ import { useState } from "react";
 
 interface MenuProps {
   code: string;
-  onFileUpload: (content: string) => void; // Nueva prop para manejar el contenido del archivo
+  onFileUpload: (content: string) => void;
+  listSymbols: Array<{
+    id: string;
+    tipo: string;
+    tipoDato: string;
+    ambito: string;
+    linea: number;
+    columna: number;
+  }> | null; 
 }
 
-export default function Menu({ code, onFileUpload }: MenuProps) {
+export default function Menu({ code, onFileUpload, listSymbols }: MenuProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [fileSubmenuOpen, setFileSubmenuOpen] = useState(false);
   const [reportsSubmenuOpen, setReportsSubmenuOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isModalOpenSymbols, setIsModalOpenSymbols] = useState(false);
   const [svgContent, setSvgContent] = useState("");
 
   const toggleMenu = () => {
@@ -31,6 +40,7 @@ export default function Menu({ code, onFileUpload }: MenuProps) {
 
   const closeModal = () => {
     setIsModalOpen(false);
+    setIsModalOpenSymbols(false);
   };
 
   // Función para manejar la selección de archivos
@@ -72,6 +82,11 @@ export default function Menu({ code, onFileUpload }: MenuProps) {
     }
   };
 
+  const openSymbolsModal = () => {
+    setIsModalOpenSymbols(true);
+    console.log("Listado de símbolos:", listSymbols);
+  };
+
   return (
     <div className="relative">
       <button
@@ -105,7 +120,9 @@ export default function Menu({ code, onFileUpload }: MenuProps) {
                   </li>
                   <li
                     className="px-4 py-2 hover:bg-indigo-600 text-white cursor-pointer"
-                    onClick={() => document.getElementById("fileInput")?.click()} // Simular clic en el input de archivo
+                    onClick={() =>
+                      document.getElementById("fileInput")?.click()
+                    } // Simular clic en el input de archivo
                   >
                     Open File
                   </li>
@@ -134,7 +151,7 @@ export default function Menu({ code, onFileUpload }: MenuProps) {
                   <li className="px-4 py-2 hover:bg-indigo-600 text-white cursor-pointer">
                     Reporte Errores
                   </li>
-                  <li className="px-4 py-2 hover:bg-indigo-600 text-white cursor-pointer">
+                  <li className="px-4 py-2 hover:bg-indigo-600 text-white cursor-pointer" onClick={openSymbolsModal}>
                     Tabla de Simbolos
                   </li>
                   <li
@@ -165,6 +182,54 @@ export default function Menu({ code, onFileUpload }: MenuProps) {
             <h2 className="text-2xl font-bold mb-4 text-gray-800">AST</h2>
             <div className="overflow-auto h-full border border-gray-200 rounded-lg p-3 bg-gray-50">
               <div dangerouslySetInnerHTML={{ __html: svgContent }} />
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                onClick={closeModal}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isModalOpenSymbols && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-20">
+          <div className="bg-white bg-opacity-95 p-6 rounded-lg shadow-xl w-[95%] max-w-5xl h-[80%] max-h-[80vh] flex flex-col">
+            <h2 className="text-2xl font-bold mb-4 text-gray-800">
+              Tabla de Símbolos
+            </h2>
+            <div className="overflow-auto h-full border border-gray-200 rounded-lg p-3 bg-gray-50">
+              {listSymbols && listSymbols.length > 0 ? (
+                <table className="min-w-full text-sm text-left text-gray-500">
+                  <thead className="bg-gray-200">
+                    <tr>
+                      <th className="px-4 py-2 ">Id</th>
+                      <th className="px-4 py-2">Tipo</th>
+                      <th className="px-4 py-2">Tipo de Dato</th>
+                      <th className="px-4 py-2">Ámbito</th>
+                      <th className="px-4 py-2">Línea</th>
+                      <th className="px-4 py-2">Columna</th>
+                    </tr>
+                  </thead>
+                  <tbody className=" text-gray-500">
+                    {listSymbols.map((symbol, index) => (
+                      <tr key={index} className="hover:bg-gray-100  text-gray-500">
+                        <td className="px-4 py-2 ">{symbol.id}</td>
+                        <td className="px-4 py-2 ">{symbol.tipo}</td>
+                        <td className="px-4 py-2 ">{symbol.tipoDato}</td>
+                        <td className="px-4 py-2 ">{symbol.ambito}</td>
+                        <td className="px-4 py-2 ">{symbol.linea}</td>
+                        <td className="px-4 py-2 ">{symbol.columna}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p>No hay símbolos para mostrar.</p>
+              )}
             </div>
             <div className="mt-4 flex justify-end">
               <button

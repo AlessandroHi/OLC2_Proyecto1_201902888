@@ -84,4 +84,6 @@ public class Environment
         throw new SemanticError("Variable " + id + " no encontrada", token);
     }
 
+
+
 }
